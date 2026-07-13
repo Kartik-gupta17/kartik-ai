@@ -2,12 +2,14 @@
 Neural-network components for KartikAI.
 """
 
-from .embedding import Embedding
 from .linear import Linear
+from .embedding import Embedding
 from .layernorm import LayerNorm
+from .dropout import Dropout
 
 __all__ = [
-    "Embedding",
     "Linear",
+    "Embedding",
     "LayerNorm",
+    "Dropout",
 ]
