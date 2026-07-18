@@ -19,3 +19,8 @@ from .rope import RotaryPositionEmbedding
 __all__ = [
     "RotaryPositionEmbedding",
 ]
+from .transformer_block import TransformerBlock
+
+__all__ = [
+    "TransformerBlock",
+]
