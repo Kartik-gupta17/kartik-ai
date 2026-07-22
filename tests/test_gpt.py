@@ -1,0 +1,50 @@
+import torch
+
+from ai.transformer.gpt import GPTModel
+from configs.model_config import ModelConfig
+
+
+def build_model():
+
+    config = ModelConfig(
+        vocab_size=100,
+        embedding_dim=32,
+        num_heads=4,
+        num_layers=2,
+        ffn_hidden_dim=128,
+    )
+
+    return GPTModel(config)
+
+
+def test_gpt_output_shape():
+
+    model = build_model()
+
+    x = torch.randint(
+        0,
+        100,
+        (2, 16),
+    )
+
+    logits = model(x)
+
+    assert logits.shape == (2, 16, 100)
+
+
+def test_parameter_count():
+
+    model = build_model()
+
+    assert model.num_parameters > 0
+
+
+def test_weight_tying():
+
+    model = build_model()
+
+    assert (
+        model.token_embedding.weight.data_ptr()
+        ==
+        model.lm_head.weight.data_ptr()
+    )
