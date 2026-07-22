@@ -48,3 +48,33 @@ def test_weight_tying():
         ==
         model.lm_head.weight.data_ptr()
     )
+def test_gpt_training_forward():
+
+    model = build_model()
+
+    x = torch.randint(
+        0,
+        100,
+        (2, 16),
+    )
+
+    targets = torch.randint(
+        0,
+        100,
+        (2, 16),
+    )
+
+    logits, loss = model(
+        x,
+        targets,
+    )
+
+    assert logits.shape == (
+        2,
+        16,
+        100,
+    )
+
+    assert loss.ndim == 0
+
+    assert torch.isfinite(loss)
