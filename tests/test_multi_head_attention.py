@@ -147,3 +147,41 @@ def test_invalid_head_configuration() -> None:
             embedding_dim=30,
             num_heads=4,
         )
+def test_attention_contains_rope() -> None:
+    attention = MultiHeadAttention(
+        embedding_dim=32,
+        num_heads=4,
+        dropout=0.0,
+    )
+
+    assert hasattr(attention, "rope")
+    assert attention.rope.head_dim == 8
+
+
+def test_invalid_odd_rope_head_dimension() -> None:
+    with pytest.raises(
+        ValueError,
+        match="even head dimension",
+    ):
+        MultiHeadAttention(
+            embedding_dim=15,
+            num_heads=3,
+        )
+
+
+def test_rope_attention_output_is_finite() -> None:
+    attention = MultiHeadAttention(
+        embedding_dim=32,
+        num_heads=4,
+        dropout=0.0,
+    )
+
+    x = torch.randn(2, 12, 32)
+
+    output, weights = attention(
+        x,
+        return_attention=True,
+    )
+
+    assert torch.isfinite(output).all()
+    assert torch.isfinite(weights).all()

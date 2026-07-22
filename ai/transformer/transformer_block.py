@@ -1,12 +1,28 @@
 from torch import Tensor, nn
 
 from ai.nn import FeedForward, LayerNorm
-from ai.transformer import MultiHeadAttention, RotaryPositionEmbedding
+from .multi_head_attention import MultiHeadAttention
 
 
 class TransformerBlock(nn.Module):
     """
-    Pre-LayerNorm Transformer Block.
+    Pre-LayerNorm Transformer block.
+
+    Architecture:
+
+        Input
+          ↓
+        LayerNorm
+          ↓
+        Multi-Head Attention + RoPE
+          ↓
+        Residual Connection
+          ↓
+        LayerNorm
+          ↓
+        Feed Forward Network
+          ↓
+        Residual Connection
     """
 
     def __init__(
@@ -15,8 +31,20 @@ class TransformerBlock(nn.Module):
         num_heads: int,
         ffn_hidden_dim: int,
         dropout: float = 0.1,
+        bias: bool = True,
+        rope_base: float = 10000.0,
     ) -> None:
         super().__init__()
+
+        if embedding_dim <= 0:
+            raise ValueError(
+                "embedding_dim must be greater than 0."
+            )
+
+        if ffn_hidden_dim <= 0:
+            raise ValueError(
+                "ffn_hidden_dim must be greater than 0."
+            )
 
         self.norm1 = LayerNorm(embedding_dim)
 
@@ -24,10 +52,8 @@ class TransformerBlock(nn.Module):
             embedding_dim=embedding_dim,
             num_heads=num_heads,
             dropout=dropout,
-        )
-
-        self.rope = RotaryPositionEmbedding(
-            head_dim=embedding_dim // num_heads,
+            bias=bias,
+            rope_base=rope_base,
         )
 
         self.norm2 = LayerNorm(embedding_dim)
@@ -39,25 +65,20 @@ class TransformerBlock(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        # ----- Attention -----
-        residual = x
+        if x.ndim != 3:
+            raise ValueError(
+                "Input must have shape "
+                "(batch_size, sequence_length, embedding_dim)."
+            )
 
-        x = self.norm1(x)
+        # Pre-Norm Attention + Residual
+        x = x + self.attention(
+            self.norm1(x)
+        )
 
-        # NOTE:
-        # RoPE integration actual Q,K tensors par hogi.
-        # Abhi architecture ready hai.
-        x = self.attention(x)
-
-        x = residual + x
-
-        # ----- Feed Forward -----
-        residual = x
-
-        x = self.norm2(x)
-
-        x = self.feed_forward(x)
-
-        x = residual + x
+        # Pre-Norm Feed Forward + Residual
+        x = x + self.feed_forward(
+            self.norm2(x)
+        )
 
         return x

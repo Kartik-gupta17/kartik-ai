@@ -1,21 +1,23 @@
 import math
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
-from torch import Tensor
-from torch import nn
+from torch import Tensor, nn
 
 from ai.nn import Dropout, Linear
+from .rope import RotaryPositionEmbedding
 
 
 class MultiHeadAttention(nn.Module):
     """
-    Causal Multi-Head Self-Attention.
+    Causal Multi-Head Self-Attention with Rotary Position Embedding.
 
-    Input shape:
+    Input:
+        x: Tensor of shape
         (batch_size, sequence_length, embedding_dim)
 
-    Output shape:
+    Output:
+        Tensor of shape
         (batch_size, sequence_length, embedding_dim)
     """
 
@@ -25,14 +27,19 @@ class MultiHeadAttention(nn.Module):
         num_heads: int,
         dropout: float = 0.0,
         bias: bool = True,
+        rope_base: float = 10000.0,
     ) -> None:
         super().__init__()
 
         if embedding_dim <= 0:
-            raise ValueError("embedding_dim must be greater than 0.")
+            raise ValueError(
+                "embedding_dim must be greater than 0."
+            )
 
         if num_heads <= 0:
-            raise ValueError("num_heads must be greater than 0.")
+            raise ValueError(
+                "num_heads must be greater than 0."
+            )
 
         if embedding_dim % num_heads != 0:
             raise ValueError(
@@ -40,13 +47,24 @@ class MultiHeadAttention(nn.Module):
             )
 
         if not 0.0 <= dropout < 1.0:
-            raise ValueError("dropout must be between 0 and 1.")
+            raise ValueError(
+                "dropout must be in the range [0, 1)."
+            )
+
+        if rope_base <= 0:
+            raise ValueError(
+                "rope_base must be greater than 0."
+            )
 
         self.embedding_dim = embedding_dim
         self.num_heads = num_heads
         self.head_dim = embedding_dim // num_heads
 
-        # Q, K and V ko ek hi projection se generate karenge.
+        if self.head_dim % 2 != 0:
+            raise ValueError(
+                "RoPE requires an even head dimension."
+            )
+
         self.qkv_projection = Linear(
             embedding_dim,
             3 * embedding_dim,
@@ -59,6 +77,11 @@ class MultiHeadAttention(nn.Module):
             bias=bias,
         )
 
+        self.rope = RotaryPositionEmbedding(
+            head_dim=self.head_dim,
+            base=rope_base,
+        )
+
         self.attention_dropout = Dropout(dropout)
         self.output_dropout = Dropout(dropout)
 
@@ -68,7 +91,7 @@ class MultiHeadAttention(nn.Module):
 
         (batch, sequence, embedding_dim)
 
-        into:
+        to:
 
         (batch, num_heads, sequence, head_dim)
         """
@@ -90,7 +113,7 @@ class MultiHeadAttention(nn.Module):
 
         (batch, num_heads, sequence, head_dim)
 
-        into:
+        to:
 
         (batch, sequence, embedding_dim)
         """
@@ -105,16 +128,16 @@ class MultiHeadAttention(nn.Module):
             self.embedding_dim,
         )
 
+    @staticmethod
     def _create_causal_mask(
-        self,
         sequence_length: int,
         device: torch.device,
     ) -> Tensor:
         """
-        Lower triangular mask create karta hai.
+        Lower-triangular causal mask create karta hai.
 
-        Token sirf current aur previous tokens ko dekh sakta hai.
-        Future tokens masked rahenge.
+        Har token current aur previous tokens ko dekh sakta hai,
+        lekin future tokens ko nahi.
         """
 
         return torch.tril(
@@ -137,44 +160,45 @@ class MultiHeadAttention(nn.Module):
                 "(batch_size, sequence_length, embedding_dim)."
             )
 
-        batch_size, sequence_length, embedding_dim = x.shape
+        _, sequence_length, embedding_dim = x.shape
 
         if embedding_dim != self.embedding_dim:
             raise ValueError(
-                f"Expected embedding dimension {self.embedding_dim}, "
+                f"Expected embedding dimension "
+                f"{self.embedding_dim}, "
                 f"but received {embedding_dim}."
             )
 
-        # Shape:
         # (batch, sequence, 3 * embedding_dim)
         qkv = self.qkv_projection(x)
 
-        # Q, K, V alag karna
         query, key, value = qkv.chunk(3, dim=-1)
 
-        # Shape:
         # (batch, heads, sequence, head_dim)
         query = self._split_heads(query)
         key = self._split_heads(key)
         value = self._split_heads(value)
 
-        # Scaled dot-product attention
+        # Position information sirf Query aur Key par apply hoti hai.
+        query, key = self.rope(query, key)
+
         attention_scores = torch.matmul(
             query,
             key.transpose(-2, -1),
         )
 
-        attention_scores = attention_scores / math.sqrt(self.head_dim)
+        attention_scores = (
+            attention_scores / math.sqrt(self.head_dim)
+        )
 
         causal_mask = self._create_causal_mask(
             sequence_length=sequence_length,
             device=x.device,
         )
 
-        # Future positions ko -infinity denge
         attention_scores = attention_scores.masked_fill(
             ~causal_mask,
-            float("-inf"),
+            torch.finfo(attention_scores.dtype).min,
         )
 
         attention_weights = torch.softmax(
@@ -186,14 +210,11 @@ class MultiHeadAttention(nn.Module):
             attention_weights
         )
 
-        # Shape:
-        # (batch, heads, sequence, head_dim)
         attention_output = torch.matmul(
             attention_weights,
             value,
         )
 
-        # Sabhi heads ko combine karna
         attention_output = self._merge_heads(
             attention_output
         )
