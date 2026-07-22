@@ -97,3 +97,58 @@ def test_generate():
         1,
         15,
     )
+def test_generate_temperature():
+
+    model = build_model()
+
+    x = torch.randint(
+        0,
+        100,
+        (1, 5),
+    )
+
+    output = model.generate(
+        input_ids=x,
+        max_new_tokens=5,
+        temperature=0.7,
+    )
+
+    assert output.shape == (1, 10)
+
+
+def test_generate_top_k():
+
+    model = build_model()
+
+    x = torch.randint(
+        0,
+        100,
+        (1, 5),
+    )
+
+    output = model.generate(
+        input_ids=x,
+        max_new_tokens=5,
+        top_k=10,
+    )
+
+    assert output.shape == (1, 10)
+
+
+def test_generate_greedy_mode():
+
+    model = build_model()
+
+    x = torch.randint(
+        0,
+        100,
+        (1, 5),
+    )
+
+    output = model.generate(
+        input_ids=x,
+        max_new_tokens=5,
+        do_sample=False,
+    )
+
+    assert output.shape == (1, 10)
