@@ -78,3 +78,22 @@ def test_gpt_training_forward():
     assert loss.ndim == 0
 
     assert torch.isfinite(loss)
+def test_generate():
+
+    model = build_model()
+
+    x = torch.randint(
+        0,
+        100,
+        (1, 5),
+    )
+
+    output = model.generate(
+        x,
+        max_new_tokens=10,
+    )
+
+    assert output.shape == (
+        1,
+        15,
+    )

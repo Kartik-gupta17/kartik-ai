@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
@@ -48,7 +49,7 @@ class GPTModel(nn.Module):
             bias=False,
         )
 
-        # Token embedding aur output layer same weights use karenge.
+        # Weight tying
         self.lm_head.weight = self.token_embedding.weight
 
     def forward(
@@ -100,6 +101,51 @@ class GPTModel(nn.Module):
         )
 
         return logits, loss
+
+    @torch.no_grad()
+    def generate(
+        self,
+        input_ids: Tensor,
+        max_new_tokens: int,
+    ) -> Tensor:
+        """
+        Greedy token generation.
+        """
+
+        if input_ids.ndim != 2:
+            raise ValueError(
+                "input_ids must have shape "
+                "(batch_size, sequence_length)."
+            )
+
+        if max_new_tokens < 0:
+            raise ValueError(
+                "max_new_tokens must be zero or greater."
+            )
+
+        self.eval()
+
+        generated_ids = input_ids
+
+        for _ in range(max_new_tokens):
+            logits = self(generated_ids)
+
+            # Last position ke vocabulary logits
+            next_token_logits = logits[:, -1, :]
+
+            # Highest-logit token select karo
+            next_token = torch.argmax(
+                next_token_logits,
+                dim=-1,
+                keepdim=True,
+            )
+
+            generated_ids = torch.cat(
+                (generated_ids, next_token),
+                dim=1,
+            )
+
+        return generated_ids
 
     @property
     def num_parameters(self) -> int:
